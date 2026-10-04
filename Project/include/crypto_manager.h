@@ -33,6 +33,9 @@ public:
                  const uint8_t* tag, size_t tagLength,
                  uint8_t* plaintextOutput);
 
+    // Exports our local generated public key to transmit over the air during handshake
+    bool GetLocalPublicKey(uint8_t* publicKeyOutput, size_t* publicKeyLength);
+
 private:
     mbedtls_gcm_context gcmContext_;
     mbedtls_ecdh_context ecdhContext_;

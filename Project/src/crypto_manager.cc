@@ -94,3 +94,18 @@ bool CryptoManager::Decrypt(const uint8_t* ciphertext, size_t ciphertextLength, 
     int result = mbedtls_gcm_auth_decrypt(&gcmContext_, ciphertextLength, nonce, nonceLength, nullptr, 0, tag, tagLength, ciphertext, plaintextOutput);
     return (result == 0);
 }
+
+bool CryptoManager::GetLocalPublicKey(uint8_t* publicKeyOutput, size_t* publicKeyLength) {
+    if (!isInitialized_ || publicKeyOutput == nullptr || publicKeyLength == nullptr) {
+        return false;
+    }
+    // Re-generate or fetch current key pair public component
+    size_t olen = 0;
+    if (mbedtls_ecp_point_write_binary(&ecdhContext_.grp, &ecdhContext_.Q,
+                                       MBEDTLS_ECP_PF_UNCOMPRESSED,
+                                       &olen, publicKeyOutput, 65) != 0) {
+        return false;
+    }
+    *publicKeyLength = olen;
+    return true;
+}
