@@ -1,0 +1,9 @@
+.pio/
+build/
+build-pc/
+tmp/
+include/pair_secret.h
+logs/
+*.pcapng
+entregas/
+vendor/mbedtls/.git/

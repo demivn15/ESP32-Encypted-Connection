@@ -20,7 +20,7 @@ std::string keyboard;
 bool overflow = false, demo = true;
 uint32_t txCount = 0, rxCount = 0, rejectCount = 0, handshakeSince = 0, retrySince = 0;
 uint32_t pingSince = 0;
-Bytes pendingPing, lastText;
+Bytes pendingPing, pendingTextWire, lastConfirmedText;
 TextRtt textRtt;
 
 void printHex(const Bytes &value) {
@@ -30,8 +30,8 @@ void printHex(const Bytes &value) {
 void showPacket(const Bytes &wire) {
     SecurePacket p;
     if (!demo || !PacketHandler::Deserialize(wire, p)) return;
-    Serial.printf("[WIRE] tipo=%u rol=%u SEQ=%lu bytes=%u SID=", uint8_t(p.type), p.role,
-        (unsigned long)p.sequence, (unsigned)wire.size());
+    Serial.printf("[WIRE] tipo=%u (%s) rol=%u (%c) SEQ=%lu bytes=%u SID=", uint8_t(p.type),
+        PacketHandler::TypeName(p.type), p.role, p.role == 1 ? 'A' : 'B', (unsigned long)p.sequence, (unsigned)wire.size());
     printHex(Bytes(p.sid.begin(), p.sid.end()));
     if (p.type == PacketType::Hello || p.type == PacketType::Response) {
         Serial.print("[PUBLICA ECDH] "); printHex(Bytes(p.payload.begin(), p.payload.begin()+65));
@@ -75,6 +75,9 @@ void metric(const char *direction, size_t plain, size_t wire, uint32_t encrypt, 
     }
 }
 bool sendProtected(PacketType type, const Bytes &plain, const std::string &attack = "") {
+    if (type == PacketType::Text && attack.empty() && !pendingPing.empty()) {
+        Serial.println("[INFO] Espera la respuesta del ping antes de medir otro texto."); return false;
+    }
     if (type == PacketType::Text && attack.empty() && textRtt.Pending()) {
         Serial.println("[INFO] Espera CONFIRMADO o TIMEOUT antes del siguiente texto."); return false;
     }
@@ -102,7 +105,7 @@ bool sendProtected(PacketType type, const Bytes &plain, const std::string &attac
     ++txCount;
     if (type == PacketType::Text && attack.empty()) {
         SecurePacket packet; PacketHandler::Deserialize(wire, packet);
-        lastText = wire;
+        pendingTextWire = wire;
         textRtt.Start(packet.sequence, start, plain.size(), wire.size());
     }
     const char *direction = type == PacketType::Text ? "TX" : type == PacketType::Ping ? "PING_TX" : "PONG_TX";
@@ -126,16 +129,21 @@ void command(const std::string &input) {
     if (input == "/help") { help(); return; }
     if (input == "/metricas") { metricHeader(); return; }
     if (input == "/reset") {
-        session->Reset(); pendingPing.clear(); lastText.clear(); textRtt.Clear(); handshakeSince = 0;
+        session->Reset(); pendingPing.clear(); pendingTextWire.clear(); lastConfirmedText.clear(); textRtt.Clear(); handshakeSince = 0;
         Serial.println("[RESET] Sesion local borrada. Reinicia/reset tambien al otro extremo."); return;
     }
     if (input == "/stats") {
         Serial.printf("TX=%lu RX=%lu REJECT=%lu heap_libre=%lu heap_minimo=%lu cola_descartados=%lu estado=%u\n",
             (unsigned long)txCount, (unsigned long)rxCount, (unsigned long)rejectCount,
             (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
-            (unsigned long)wireless.Dropped(), unsigned(session->Status())); return;
+            (unsigned long)wireless.Dropped(), unsigned(session->Status()));
+        const char *name = session->Status() == State::Idle ? "Sin sesion" : session->Status() == State::WaitResponse ?
+            "Esperando RESPONSE" : session->Status() == State::WaitReady ? "Esperando READY" : "Sesion segura establecida";
+        Serial.printf("[ESTADO] %s | demo=%s | texto_pendiente=%s\n", name, demo ? "ON" : "OFF", textRtt.Pending() ? "SI" : "NO"); return;
     }
-    if (input == "/demo on" || input == "/demo off") { demo = input == "/demo on"; return; }
+    if (input == "/demo on" || input == "/demo off") {
+        demo = input == "/demo on"; Serial.printf("[DEMO] %s\n", demo ? "ON: muestra cifrado y explicaciones" : "OFF: medidas con menos impresion"); return;
+    }
     if (input == "connect") {
         if (DEVICE_ROLE != 1) { Serial.println("[INFO] B espera el connect de A."); return; }
         Bytes hello; uint32_t startedAt = millis();
@@ -145,14 +153,15 @@ void command(const std::string &input) {
         Serial.println("[HANDSHAKE] HELLO autenticado enviado; esperando B."); showPacket(hello); return;
     }
     if (input == "/ping") {
+        if (textRtt.Pending()) { Serial.println("[INFO] Espera CONFIRMADO antes de medir el ping."); return; }
         if (!pendingPing.empty()) { Serial.println("[INFO] Espera el ping pendiente."); return; }
         pendingPing = CryptoManager::Random(8); pingSince = micros();
         if (pendingPing.size() != 8 || !sendProtected(PacketType::Ping, pendingPing)) pendingPing.clear();
         return;
     }
     if (input == "/attack replay") {
-        if (lastText.empty()) { Serial.println("[ERROR] Envia antes texto normal y comprueba su recepcion."); return; }
-        if (wireless.Send(session->Peer(), lastText)) Serial.println("[ATTACK] Mismo registro capturado reenviado sin modificar.");
+        if (lastConfirmedText.empty()) { Serial.println("[ERROR] Envia texto normal y espera CONFIRMADO antes del replay."); return; }
+        if (wireless.Send(session->Peer(), lastConfirmedText)) Serial.println("[ATTACK] Texto previamente confirmado capturado y reenviado sin modificar.");
         return;
     }
     if (input.compare(0,8,"/attack ") == 0) {
@@ -208,6 +217,7 @@ void receive(const Mac &mac, const Bytes &wire) {
         bool confirmed = textRtt.Confirm(result.acknowledgedSequence, verifiedAt, timing);
         metric("ACK_RX", 4, wire.size(), 0, elapsed, 0);
         if (confirmed) {
+            lastConfirmedText = pendingTextWire; pendingTextWire.clear();
             metric("RTT_TEXT", timing.textBytes, timing.packetBytes, 0, 0, timing.elapsedUs);
             Serial.printf("[CONFIRMADO] Texto SEQ=%lu: receptor verifico y descifro; ACK cifrado verificado. RTT=%lu us (%lu.%03lu ms).\n",
                 (unsigned long)timing.sequence, (unsigned long)timing.elapsedUs,
@@ -234,7 +244,9 @@ void receive(const Mac &mac, const Bytes &wire) {
             Serial.write(result.plaintext.data(), result.plaintext.size()); Serial.println();
         } else if (result.event == Event::Ping) sendProtected(PacketType::Pong, result.plaintext);
         else if (CryptoManager::Equal(pendingPing, result.plaintext)) {
-            metric("RTT", 0, 0, 0, 0, verifiedAt-pingSince); pendingPing.clear();
+            if (TextRtt::WithinDeadline(pingSince, verifiedAt)) metric("RTT", 0, 0, 0, 0, verifiedAt-pingSince);
+            else Serial.println("[TIMEOUT] PONG fuera de plazo; no se registra RTT.");
+            pendingPing.clear();
         }
     }
 }
@@ -278,7 +290,7 @@ void loop() {
         pendingPing.clear(); Serial.println("[TIMEOUT] Ping sin respuesta en 5 s.");
     }
     if (textRtt.Expired(micros())) {
-        textRtt.Clear();
+        textRtt.Clear(); pendingTextWire.clear();
         Serial.println("[TIMEOUT] Texto sin ACK valido en 5 s; recepcion no confirmada. No se calcula RTT.");
     }
     delay(2);

@@ -245,6 +245,11 @@ int main() {
             TextRtt timer; TextRttResult r;
             require(timer.Start(1,UINT32_MAX-99,0,61) && timer.Confirm(1,100,r) && r.elapsedUs==200,"Desbordamiento");
         });
+        test("plazo de RTT compartido con ping: limite y rollover", [] {
+            require(TextRtt::WithinDeadline(100,5000099),"Antes de 5 s");
+            require(!TextRtt::WithinDeadline(100,5000100),"Acepto respuesta vencida");
+            require(TextRtt::WithinDeadline(UINT32_MAX-99,100),"Rollover");
+        });
         std::cout << passed << " pruebas aprobadas. No se ha probado radio/hardware.\n";
         return 0;
     } catch (const std::exception &e) { std::cerr << "[ERROR] " << e.what() << "\n"; return 1; }
