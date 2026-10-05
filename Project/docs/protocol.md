@@ -1,17 +1,20 @@
-<!-- Mermaid code for the Protocol Protocol Sequence diagram -->
+# Secuencia implementada
 
----
-config:
-  theme: neutral
----
+~~~mermaid
 sequenceDiagram
-    Sender->>+Receiver: ECDH Public Key Exchange
-    Receiver->>+Sender: ECDH Public Key Exchange
-    note over Sender,Receiver: Derive Shared Session Key (Ks) via HKDF
-    note left of Sender: Encrypt Plaintext (AES-GCM, SEQ++, Nonce)
-    note left of Sender: Construct Packet: [ID || SID || SEQ || N || C || TAG]
-    Sender ->>+Receiver: Transmit Wireless Packet
-    note right of Receiver: Verify Sender and SID
-    note right of Receiver: Check SEQ (Replay Protection)
-    note right of Receiver: Decrypt & Verify TAG (AES-GCM)
-    note right of Receiver: Extract Plaintext Message
+    participant A as ESP32 A
+    participant B as ESP32 B
+    A->>B: HELLO: SID, QA, NA, MAC A, HMAC
+    B->>B: Verificar HMAC, generar QB y NB
+    B->>A: RESPONSE: QB, NB, MAC B, HMAC(T)
+    A->>A: Verificar HMAC(T), validar QB, ECDH, HKDF
+    B->>B: Validar QA, ECDH, HKDF
+    A->>B: READY cifrado, SEQ 0, clave A->B
+    B->>A: READY cifrado, SEQ 0, clave B->A
+    A->>B: TEXT: cabecera AAD, ciphertext, tag, SEQ 1+
+    B->>B: Verificar origen/SID/nonce/GCM, confirmar replay
+    B->>A: ACK cifrado: referencia al SEQ del TEXT, SEQ propio
+    A->>A: Verificar ACK y referencia; registrar RTT_TEXT
+~~~
+
+PROTOCOLO.md especifica todos los bytes y las excepciones de reintento.

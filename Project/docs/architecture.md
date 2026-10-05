@@ -1,26 +1,17 @@
-<!-- Mermaid code for the System Architecture diagram. -->
+# Arquitectura implementada
 
-architecture-beta
-group application_layer[Application Layer]
-    service user[Serial CLI] in application_layer
-    service plaintext[Plaintext] in application_layer
-    service session_controller[Session Controller] in application_layer
+~~~mermaid
+flowchart LR
+    CA[Consola USB A] --> A[ESP32 A: Session]
+    A <--> W[ESP-NOW canal 1: medio no confiable]
+    W <--> B[ESP32 B: Session]
+    B --> CB[Consola USB B]
+    KA[Credencial privada de pareja] --> A
+    KA --> B
+    A --> CR[ECDH P-256 + HMAC + HKDF + AES-GCM]
+    B --> CR
+~~~
 
-group cryptographic_protocol_layer[Cryptographic Protocol Layer]
-    service ecdh[ECDH Session Key Derivation] in cryptographic_protocol_layer
-    service aes_gcm[AES_128_GCM] in cryptographic_protocol_layer
-    service sequence_number[Replay Protection Tracker SEQ] in cryptographic_protocol_layer
-
-group transmission_layer[Transmission Layer]
-    service packet_formatting[Packet Serialization] in transmission_layer 
-
-group physical_layer[Physical Layer]
-    service esp_connection[Wireless Driver] in physical_layer
-
-user:L --> R:plaintext
-plaintext:B --> T:aes_gcm
-session_controller:B --> T:ecdh
-ecdh:R --> L:aes_gcm
-sequence_number:L --> R:aes_gcm
-aes_gcm:B --> T:packet_formatting
-packet_formatting:B --> T:esp_connection
+Cada computadora programa y monitorea su placa. No coordina ni descifra el
+trafico entre placas. El callback de WiFi copia frames a una cola; loop()
+comprueba el protocolo y presenta resultados. Los endpoints son quienes cifran.
