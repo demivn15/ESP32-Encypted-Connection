@@ -510,6 +510,6 @@ Third-party mbedTLS code retains the [license included with its source](Project/
 
 ## Authors
 
-Mateo Oñate and Damian Viteri.
+Mateo Oñate and Demian Viteri.
 
 Cryptography, Yachay Tech University, School of Mathematical and Computational Sciences.
