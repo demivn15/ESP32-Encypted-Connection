@@ -1,1 +1,15 @@
 Project/test/
+LEEME_COMPANERO.txt
+Project/build/
+Project/compilar.ps1
+Project/compile_commands.json
+Project/docs/
+Project/lib/
+Project/logs/
+Project/measurements/
+Project/output/
+Project/platformio.ini
+Project/resumir_metricas.ps1
+Project/tools/
+Project/.pio/
+Project/.vscode/
