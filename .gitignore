@@ -3,7 +3,9 @@ LEEME_COMPANERO.txt
 Project/build/
 Project/compilar.ps1
 Project/compile_commands.json
-Project/docs/
+Project/docs/*
+!Project/docs/architecture.png
+!Project/docs/protocol.png
 Project/lib/
 Project/logs/
 Project/measurements/
